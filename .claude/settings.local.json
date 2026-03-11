@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart analyze lib/)",
+      "Bash(mdfind \"kMDItemCFBundleIdentifier == ''io.flutter''\")",
+      "Bash(mdfind \"flutter\")",
+      "Bash(~/development/flutter/bin/flutter pub run build_runner build --delete-conflicting-outputs)",
+      "Bash(~/development/flutter/bin/dart analyze lib/)"
+    ]
+  }
+}
