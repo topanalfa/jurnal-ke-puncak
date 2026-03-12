@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'shared/widgets/scaffold_with_nav.dart';
 import 'features/home/home_page.dart';
 import 'features/log_hike/log_hike_page.dart';
+import 'features/hike_detail/hike_detail_page.dart';
 import 'features/journal/journal_page.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -39,6 +40,18 @@ final router = GoRouter(
           ),
         ),
       ],
+    ),
+    // Hike detail route outside shell (full page)
+    GoRoute(
+      path: '/hike/:id',
+      name: 'hikeDetail',
+      parentNavigatorKey: _rootNavigatorKey,
+      pageBuilder: (context, state) {
+        final hikeId = state.pathParameters['id'];
+        return NoTransitionPage(
+          child: HikeDetailPage(hikeId: hikeId ?? ''),
+        );
+      },
     ),
   ],
 );

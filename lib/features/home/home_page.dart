@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../data/providers/hike_provider.dart';
 import '../../shared/theme/app_theme.dart';
@@ -289,6 +290,7 @@ class HomePage extends ConsumerWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: () {
           // Navigate to hike details
+          context.go('/hike/${hike.id}');
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
