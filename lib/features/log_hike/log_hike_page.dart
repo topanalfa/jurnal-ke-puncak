@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../data/providers/hike_provider.dart';
 import '../../models/hike_model.dart';
 import '../../shared/theme/app_theme.dart';
@@ -31,6 +33,10 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
   String _selectedMoodAfter = 'Calm';
   List<String> _photos = [];
   bool _isSaving = false;
+
+  // GPS tracking
+  LocationData? _startLocation;
+  LocationData? _endLocation;
 
   final List<String> _moodLabels = [
     'Low Energy',
@@ -99,6 +105,199 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
     });
   }
 
+  /// Check location permission status
+  Future<LocationPermission> _checkLocationPermission() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      return LocationPermission.denied;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    return permission;
+  }
+
+  /// Capture current GPS location
+  Future<LocationData?> _captureLocation() async {
+    bool isLoadingDialogShown = false;
+
+    try {
+      final permission = await _checkLocationPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          _showLocationPermissionDialog();
+        }
+        return null;
+      }
+
+      if (!mounted) return null;
+
+      // Show loading dialog
+      isLoadingDialogShown = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const _LocationLoadingDialog(),
+      );
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15),
+      );
+
+      // Close loading dialog
+      if (mounted && isLoadingDialogShown) {
+        Navigator.of(context).pop();
+        isLoadingDialogShown = false;
+      }
+
+      if (!mounted) return null;
+
+      final locationData = LocationData(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        timestamp: DateTime.now(),
+      );
+
+      return locationData;
+    } catch (e) {
+      // Only close dialog if it was actually shown
+      if (mounted && isLoadingDialogShown) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        _showLocationErrorDialog(e.toString());
+      }
+      return null;
+    }
+  }
+
+  /// Capture start location
+  Future<void> _captureStartLocation() async {
+    final location = await _captureLocation();
+    if (location != null && mounted) {
+      setState(() {
+        _startLocation = location;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.location_on, color: AppTheme.warmWhite, size: 20),
+              SizedBox(width: 8),
+              Text('Start location captured'),
+            ],
+          ),
+          backgroundColor: AppTheme.forestGreen,
+        ),
+      );
+    }
+  }
+
+  /// Capture end location
+  Future<void> _captureEndLocation() async {
+    final location = await _captureLocation();
+    if (location != null && mounted) {
+      setState(() {
+        _endLocation = location;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.flag, color: AppTheme.warmWhite, size: 20),
+              SizedBox(width: 8),
+              Text('End location captured'),
+            ],
+          ),
+          backgroundColor: AppTheme.mossGreen,
+        ),
+      );
+    }
+  }
+
+  void _showLocationPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.location_off, color: AppTheme.forestGreen),
+            const SizedBox(width: 8),
+            const Text('Location Permission'),
+          ],
+        ),
+        content: const Text(
+          'Location permission is required to capture GPS coordinates. Please enable it in your device settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await Geolocator.openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationErrorDialog(String error) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: AppTheme.barkBrown),
+            const SizedBox(width: 8),
+            const Text('Location Error'),
+          ],
+        ),
+        content: Text('Failed to get your location: $error'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Calculate distance between start and end locations in km using Haversine formula
+  double _calculateDistanceBetweenPoints() {
+    if (_startLocation == null || _endLocation == null) return 0.0;
+
+    const double earthRadius = 6371; // km
+    final double lat1 = _startLocation!.latitude * (math.pi / 180);
+    final double lat2 = _endLocation!.latitude * (math.pi / 180);
+    final double lon1 = _startLocation!.longitude * (math.pi / 180);
+    final double lon2 = _endLocation!.longitude * (math.pi / 180);
+
+    final double dLat = lat2 - lat1;
+    final double dLon = lon2 - lon1;
+
+    final double sinDLat = math.sin(dLat / 2);
+    final double sinDLon = math.sin(dLon / 2);
+
+    final double a =
+        sinDLat * sinDLat + math.cos(lat1) * math.cos(lat2) * sinDLon * sinDLon;
+    final double c = 2 * math.asin(math.sqrt(a));
+
+    return earthRadius * c;
+  }
+
   Future<void> _saveHike() async {
     if (_isSaving) return; // Prevent double-tap
     if (!_formKey.currentState!.validate()) return;
@@ -116,6 +315,8 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
         moodAfter: _selectedMoodAfter,
         notes: _notesController.text.trim(),
         photos: _photos,
+        startLocation: _startLocation,
+        endLocation: _endLocation,
       );
 
       await ref.read(hikeListProvider.notifier).addHike(hike);
@@ -231,11 +432,15 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
                   return null;
                 },
               ),
+              const SizedBox(height: 20),
+
+              // GPS Location Tracking Section
+              _buildLocationSection(),
               const SizedBox(height: 24),
 
               // Mood Before section
               _buildMoodSection(
-                title: 'How did you feel before the hike?',
+                title: 'How did you feel before hike?',
                 value: _moodBeforeValue,
                 moodLabels: _moodLabels,
                 onChanged: (value) {
@@ -276,6 +481,160 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
               const SizedBox(height: 20),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.gps_fixed, color: AppTheme.forestGreen),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'GPS Tracking (optional)',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppTheme.barkBrown,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Location buttons row
+        Row(
+          children: [
+            Expanded(
+              child: _buildLocationButton(
+                icon: Icons.radio_button_checked,
+                label: 'Start',
+                subtitle:
+                    _startLocation?.displayText ?? 'Tap to set start point',
+                color: AppTheme.forestGreen,
+                isSet: _startLocation?.isValid ?? false,
+                onTap: _captureStartLocation,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildLocationButton(
+                icon: Icons.flag,
+                label: 'Finish',
+                subtitle: _endLocation?.displayText ?? 'Tap to set end point',
+                color: AppTheme.mossGreen,
+                isSet: _endLocation?.isValid ?? false,
+                onTap: _captureEndLocation,
+              ),
+            ),
+          ],
+        ),
+
+        // Show calculated distance if both points are set
+        if (_startLocation?.isValid == true &&
+            _endLocation?.isValid == true) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.cream,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppTheme.sageGreen.withOpacity(0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.straighten, color: AppTheme.forestGreen, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'GPS Distance',
+                        style: TextStyle(
+                          color: AppTheme.dirtBrown,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${(_calculateDistanceBetweenPoints()).toStringAsFixed(2)} km',
+                        style: const TextStyle(
+                          color: AppTheme.forestGreen,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildLocationButton({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required bool isSet,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSet ? color.withOpacity(0.15) : AppTheme.warmWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSet ? color : AppTheme.sageGreen.withOpacity(0.3),
+            width: isSet ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.barkBrown.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: AppTheme.dirtBrown,
+                fontSize: 11,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
@@ -485,7 +844,8 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
                   inactiveTrackColor: AppTheme.sageGreen.withOpacity(0.3),
                   thumbColor: AppTheme.forestGreen,
                   overlayColor: AppTheme.forestGreen.withOpacity(0.2),
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 14),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 14),
                   trackHeight: 8,
                 ),
                 child: Slider(
@@ -777,6 +1137,30 @@ class _LogHikePageState extends ConsumerState<LogHikePage> {
             borderRadius: BorderRadius.circular(16),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Loading dialog for location capture
+class _LocationLoadingDialog extends StatelessWidget {
+  const _LocationLoadingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(
+            color: AppTheme.forestGreen,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Getting your location...',
+            style: TextStyle(color: AppTheme.barkBrown),
+          ),
+        ],
       ),
     );
   }

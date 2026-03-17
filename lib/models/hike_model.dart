@@ -2,6 +2,48 @@ import 'package:hive/hive.dart';
 
 part 'hike_model.g.dart';
 
+/// Represents GPS coordinates
+@HiveType(typeId: 20)
+class LocationData extends HiveObject {
+  @HiveField(0)
+  final double latitude;
+
+  @HiveField(1)
+  final double longitude;
+
+  @HiveField(2)
+  final DateTime? timestamp;
+
+  LocationData({
+    required this.latitude,
+    required this.longitude,
+    this.timestamp,
+  });
+
+  LocationData copyWith({
+    double? latitude,
+    double? longitude,
+    DateTime? timestamp,
+  }) {
+    return LocationData(
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      timestamp: timestamp ?? this.timestamp,
+    );
+  }
+
+  bool get isValid => latitude != 0 && longitude != 0;
+
+  String get displayText {
+    if (!isValid) return 'Location not recorded';
+    return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  @override
+  String toString() =>
+      'LocationData(lat: $latitude, lng: $longitude, time: $timestamp)';
+}
+
 @HiveType(typeId: 0)
 class HikeModel extends HiveObject {
   @HiveField(0)
@@ -31,6 +73,12 @@ class HikeModel extends HiveObject {
   @HiveField(8)
   final List<String> photos; // List of image paths/URLs
 
+  @HiveField(9)
+  final LocationData? startLocation;
+
+  @HiveField(10)
+  final LocationData? endLocation;
+
   HikeModel({
     required this.id,
     required this.title,
@@ -41,6 +89,8 @@ class HikeModel extends HiveObject {
     required this.moodAfter,
     required this.notes,
     required this.photos,
+    this.startLocation,
+    this.endLocation,
   });
 
   HikeModel copyWith({
@@ -53,6 +103,8 @@ class HikeModel extends HiveObject {
     String? moodAfter,
     String? notes,
     List<String>? photos,
+    LocationData? startLocation,
+    LocationData? endLocation,
   }) {
     return HikeModel(
       id: id ?? this.id,
@@ -64,11 +116,13 @@ class HikeModel extends HiveObject {
       moodAfter: moodAfter ?? this.moodAfter,
       notes: notes ?? this.notes,
       photos: photos ?? this.photos,
+      startLocation: startLocation ?? this.startLocation,
+      endLocation: endLocation ?? this.endLocation,
     );
   }
 
   @override
   String toString() {
-    return 'HikeModel(id: $id, title: $title, date: $date, duration: $duration, distance: $distance, moodBefore: $moodBefore, moodAfter: $moodAfter, notes: $notes, photos: $photos)';
+    return 'HikeModel(id: $id, title: $title, date: $date, duration: $duration, distance: $distance, moodBefore: $moodBefore, moodAfter: $moodAfter, notes: $notes, photos: $photos, start: $startLocation, end: $endLocation)';
   }
 }
